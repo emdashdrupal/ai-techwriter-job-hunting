@@ -1,0 +1,238 @@
+{
+  "name": "Job email collection and processing",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Detect email source from various indicators\nfunction detectSource(item) {\n  const text = item.json.textPlain || '';\n  const from = item.json.from || '';\n  const subject = item.json.subject || '';\n  \n  // LinkedIn detection\n  if (text.includes('View job:') && (from.includes('linkedin') || subject.includes('LinkedIn'))) {\n    return 'linkedin';\n  }\n  \n  // Indeed detection\n  if (from.includes('indeed') || text.includes('Indeed') || text.includes('Apply now')) {\n    return 'indeed';\n  }\n  \n  // Default to unknown\n  return 'unknown';\n}\n\n// LinkedIn parser (your existing logic with improvements)\nfunction parseLinkedIn(text, emailDate) {\n  const blocks = text\n    .split(/\\s*-{20,}\\s*/)\n    .map(b => b.trim())\n    .filter(b => b.length > 0 && b.includes('View job:'));\n\n  return blocks.map(block => {\n    const lines = block.split(/\\r?\\n/).map(l => l.trim()).filter(l => l.length > 0);\n\n    const urlLineIdx = lines.findIndex(l => l.startsWith('View job:'));\n    let jobUrl = null;\n    if (urlLineIdx !== -1) {\n      jobUrl = lines[urlLineIdx].replace('View job:', '').trim();\n      if (!jobUrl && urlLineIdx + 1 < lines.length) {\n        jobUrl = lines[urlLineIdx + 1];\n      }\n    }\n\n    const jobIdMatch = jobUrl ? jobUrl.match(/jobs\\/view\\/(\\d+)\\//) : null;\n    const jobId = jobIdMatch ? jobIdMatch[1] : null;\n    const canonicalUrl = jobId ? `https://www.linkedin.com/jobs/view/${jobId}/` : null;\n\n    // Extract job details from lines before \"View job:\"\n    const contentLines = urlLineIdx > -1 \n      ? lines.slice(0, urlLineIdx)\n      : lines;\n      \n    const skipPatterns = /^(your job alert|results from|this company|view job|subject:|date:|from:|to:|---|http|\\d)/i;\n    const filteredLines = contentLines.filter(l => !skipPatterns.test(l));\n\n    return {\n      job_id: jobId,\n      job_title: filteredLines[filteredLines.length - 3] || null,\n      company: filteredLines[filteredLines.length - 2] || null,\n      location: filteredLines[filteredLines.length - 1] || null,\n      job_url: canonicalUrl,\n      received_at: emailDate,\n      source: 'linkedin',\n      digested: false\n    };\n  }).filter(job => job.job_id !== null);\n}\n\n// Indeed parser\nfunction parseIndeed(text, emailDate) {\n  const jobs = [];\n  \n  // Split by job separators (Indeed uses horizontal rules or \"Apply now\" sections)\n  const blocks = text.split(/\\s*-{20,}|\\s*Apply now\\s*/i);\n  \n  for (const block of blocks) {\n    if (!block.trim() || block.length < 50) continue;\n    \n    const lines = block.split(/\\r?\\n/).map(l => l.trim()).filter(l => l.length > 0);\n    \n    // Find job URL (Indeed format: indeed.com/viewjob?jk=JOB_ID)\n    const urlLine = lines.find(l => l.includes('indeed.com/viewjob') || l.includes('indeed.com/viewjob'));\n    let jobUrl = urlLine ? urlLine : null;\n    \n    // Extract job ID from URL\n    let jobId = null;\n    if (jobUrl) {\n      const match = jobUrl.match(/viewjob\\?jk=([a-zA-Z0-9]+)/);\n      jobId = match ? match[1] : null;\n      canonicalUrl = `https://www.indeed.com/viewjob?jk=${jobId}`;\n    }\n    \n    // Extract job title (usually first non-empty meaningful line)\n    const titleLine = lines.find(l => {\n      if (l.length < 10 || l.length > 100) return false;\n      if (l.includes('Apply') || l.includes('indeed') || l.includes('http')) return false;\n      if (l.includes('$') || l.match(/^\\d/)) return false; // Skip salary/numbers\n      return true;\n    });\n    \n    // Extract company (often contains \"at\" or follows title)\n    const companyLine = lines.find(l => {\n      if (l.includes('at ') || l.includes(' in ')) return true;\n      if (l.length > 5 && l.length < 50 && !l.includes('$')) return true;\n      return false;\n    });\n    \n    // Extract location (contains city, state, or \"Remote\")\n    const locationLine = lines.find(l => {\n      if (l.includes('Remote') || l.includes('remote')) return true;\n      if (l.match(/[A-Z][a-z]+,\\s*[A-Z]{2}/)) return true; // City, State pattern\n      return false;\n    });\n    \n    if (jobId) {\n      jobs.push({\n        job_id: jobId,\n        job_title: titleLine || null,\n        company: companyLine || null,\n        location: locationLine || null,\n        job_url: canonicalUrl,\n        received_at: emailDate,\n        source: 'indeed'\n      });\n    }\n  }\n  \n  return jobs;\n}\n\n// Main processing\nconst rawText = $input.item.json.textPlain || '';\nconst emailDate = $input.item.json.date || new Date().toISOString();\nconst source = detectSource($input.item);\n\nlet jobs = [];\n\nif (source === 'linkedin') {\n  jobs = parseLinkedIn(rawText, emailDate);\n} else if (source === 'indeed') {\n  jobs = parseIndeed(rawText, emailDate);\n} else {\n  // Try both parsers as fallback\n  jobs = [...parseLinkedIn(rawText, emailDate), ...parseIndeed(rawText, emailDate)];\n  // Remove duplicates\n  jobs = jobs.filter((job, index, self) => \n    index === self.findIndex(t => t.job_id === job.job_id && t.source === job.source)\n  );\n}\n\n// Return in n8n format\nreturn jobs.map(job => ({ json: job }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "id": "2cf9f9dc-b33b-4b83-8ac3-e564af25a712",
+      "name": "Code in JavaScript",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "n8n-job-search",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "job_id": "={{ $json.job_id }}",
+            "job_title": "={{ $json.job_title }}",
+            "company": "={{ $json.company }}",
+            "location": "={{ $json.location }}",
+            "job_url": "={{ $json.job_url }}",
+            "received_at": "={{ $json.received_at }}"
+          },
+          "matchingColumns": [
+            "job_id"
+          ],
+          "schema": [
+            {
+              "id": "job_id",
+              "displayName": "job_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "job_title",
+              "displayName": "job_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "location",
+              "displayName": "location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "job_url",
+              "displayName": "job_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "digested",
+              "displayName": "digested",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        624,
+        0
+      ],
+      "id": "f1ab1a63-a50f-48a6-882f-99fabdde8bb0",
+      "name": "Append or update row in sheet",
+      "credentials": {
+        "googleApi": {
+          "id": "YOUR_GOOGLEAPI_CREDENTIAL_ID",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "coreImapAccount",
+        "resource": "email",
+        "mailboxPath": {
+          "__rl": true,
+          "value": "Inbox/Career/job-emails",
+          "mode": "list",
+          "cachedResultName": "Inbox/Career/job-emails"
+        },
+        "emailDateRange": {
+          "since": "={{ $today.minus({ minutes: 50 }).toFormat('dd-MMM-yyyy HH:mm:ss') }}"
+        },
+        "emailFlags": {},
+        "emailSearchFilters": {}
+      },
+      "type": "n8n-nodes-imap.imap",
+      "typeVersion": 1,
+      "position": [
+        176,
+        0
+      ],
+      "id": "640f1955-416a-4462-b454-9f48c6d09bfb",
+      "name": "GetEmailsList email",
+      "credentials": {
+        "imap": {
+          "id": "YOUR_IMAP_CREDENTIAL_ID",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mailbox": "INBOX/Career/job-emails",
+        "postProcessAction": "nothing",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.2,
+      "position": [
+        -96,
+        0
+      ],
+      "id": "40958f65-fac5-4a55-b7dc-aca102a17a4a",
+      "name": "Email Trigger (IMAP)",
+      "credentials": {
+        "imap": {
+          "id": "YOUR_IMAP_CREDENTIAL_ID",
+          "name": "IMAP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetEmailsList email": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Trigger (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "GetEmailsList email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "YOUR_VERSION_ID",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "YOUR_WORKFLOW_ID",
+  "tags": []
+}
