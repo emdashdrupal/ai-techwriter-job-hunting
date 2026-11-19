@@ -2,8 +2,8 @@
 
 A personal toolkit for AI-assisted job hunting in technical writing, content strategy, information architecture, and documentation roles. It combines:
 
-- **Two LLM system prompts** — one that tailors your resume to a specific job description, and one that brutally tears it down like a veteran hiring manager.
-- **Two n8n workflows** — one that auto-collects and parses job alert emails (LinkedIn, Indeed) into a Google Sheet, and one that emails you a daily digest of new openings and tracks which ones you've already seen.
+- **Two LLM system prompts**&thinsp;&mdash;&thinsp;one that tailors your resume to a specific job description, and one that brutally tears it down like a veteran hiring manager.
+- **Two n8n workflows**&thinsp;&mdash;&thinsp;one that auto-collects and parses job alert emails (LinkedIn, Indeed) into a Google Sheet, and one that emails you a daily digest of new openings and tracks which ones you've already seen.
 
 ## Repository contents
 
@@ -37,21 +37,21 @@ Google Sheet ("n8n-job-search", Sheet1)  <- job tracker / dedupe store
   send email -> mark jobs as digested
 ```
 
-### Workflow 1 — Job email collection and processing
+### Workflow 1&thinsp;&mdash;&thinsp;Job email collection and processing
 
-Flow: `Email Trigger (IMAP)` → `GetEmailsList email` → `Code in JavaScript` → `Append or update row in sheet`
+Flow: `Email Trigger (IMAP)` &rarr; `GetEmailsList email` &rarr; `Code in JavaScript` &rarr; `Append or update row in sheet`
 
 - **Email Trigger (IMAP):** watches `INBOX/Career/job-emails` for new messages.
 - **GetEmailsList email:** fetches messages received in the last ~50 minutes.
 - **Code in JavaScript:** detects the source (LinkedIn vs. Indeed vs. unknown), then parses out `job_id`, `job_title`, `company`, `location`, `job_url`, and `received_at`. For LinkedIn, it normalizes URLs to `https://www.linkedin.com/jobs/view/<jobId>/` so the same posting never duplicates.
 - **Append or update row in sheet:** upserts into the Google Sheet using `job_id` as the match column, so re-delivered alerts update the existing row instead of creating duplicates.
 
-### Workflow 2 — Generate job summary
+### Workflow 2&thinsp;&mdash;&thinsp;Generate job summary
 
-Flow: `Schedule Trigger` (07:00 daily) → `Get row(s) in sheet` → `Code in JavaScript` → `If (has_jobs?)` → **true:** `Send an Email` → `Get row(s) in sheet1` → `Code in JavaScript1` → `Update row in sheet` / **false:** no-op
+Flow: `Schedule Trigger` (07:00 daily) &rarr; `Get row(s) in sheet` &rarr; `Code in JavaScript` &rarr; `If (has_jobs?)` &rarr; **true:** `Send an Email` &rarr; `Get row(s) in sheet1` &rarr; `Code in JavaScript1` &rarr; `Update row in sheet` / **false:** no-op
 
 - Reads all rows and filters to jobs where `digested` is not true, sorted newest first.
-- Builds a styled HTML email ("Job Digest — <date>" with title, company, location, and date per job).
+- Builds a styled HTML email ("Job Digest&thinsp;&mdash;&thinsp;<date>" with title, company, location, and date per job).
 - Sends the digest via SMTP if there are new jobs; otherwise does nothing.
 - After sending, re-reads the sheet, filters to the undigested jobs, and sets `digested = true` so they aren't emailed again.
 
@@ -67,7 +67,7 @@ Sheet name: `Sheet1` (`gid=0`) in a spreadsheet like `n8n-job-search`.
 | `location` | Job location. |
 | `job_url` | Canonical link to the posting. |
 | `received_at` | When the alert was first received. |
-| `digested` | `TRUE` once the job has been included in a daily digest. |
+| `digested` | `TRUE` once the job is included in a daily digest. |
 
 ## Setup
 
@@ -81,13 +81,13 @@ Sheet name: `Sheet1` (`gid=0`) in a spreadsheet like `n8n-job-search`.
 
 ### Import the workflows
 
-1. In n8n, import `job-email-collection-and-processing.json` and `generate-job-summaries.json` (Workflows → Import from file).
+1. In n8n, import `job-email-collection-and-processing.json` and `generate-job-summaries.json` (Workflows &rarr; Import from file).
 2. Replace the placeholder credential IDs and values with your own:
-   - `YOUR_IMAP_CREDENTIAL_ID` — IMAP account (used by the trigger and list nodes).
-   - `YOUR_GOOGLE_SHEET_ID` — the ID of your Google Sheet.
-   - `YOUR_GOOGLEAPI_CREDENTIAL_ID` — Google Service Account credentials.
-   - `YOUR_SMTP_CREDENTIAL_ID` — SMTP account for the digest email.
-   - `your.email@example.com` — sender/recipient of the digest.
+   - `YOUR_IMAP_CREDENTIAL_ID`&thinsp;&mdash;&thinsp;IMAP account (used by the trigger and list nodes).
+   - `YOUR_GOOGLE_SHEET_ID`&thinsp;&mdash;&thinsp;the ID of your Google Sheet.
+   - `YOUR_GOOGLEAPI_CREDENTIAL_ID`&thinsp;&mdash;&thinsp;Google Service Account credentials.
+   - `YOUR_SMTP_CREDENTIAL_ID`&thinsp;&mdash;&thinsp;SMTP account for the digest email.
+   - `your.email@example.com`&thinsp;&mdash;&thinsp;sender/recipient of the digest.
 3. Create the Google Sheet with the columns listed above, and share it with the service account.
 4. Make sure job alert emails are being delivered to `Inbox/Career/job-emails` (e.g., via Gmail labels/forwarding from LinkedIn and Indeed alerts).
 5. Activate both workflows.
@@ -104,7 +104,7 @@ Sheet name: `Sheet1` (`gid=0`) in a spreadsheet like `n8n-job-search`.
 1. Use `resume-builder-prompt.md` as the system prompt in your LLM of choice.
 2. Fill in the placeholders in the "STATIC CONTACT INFO" section (name, address, email, phone, LinkedIn, portfolio, GitHub, education) and the `[X] years of experience` note in the summary guidelines.
 3. Provide your current resume(s) for context, then paste the job description.
-4. You'll get a tailored, DOCX-ready Markdown resume: custom summary, JD-scored bullets, grouped technical skills, optional AI/open-source sections, and speaking/industry involvement — all within 1–2 US Letter pages.
+4. You'll get a tailored, DOCX-ready Markdown resume: custom summary, JD-scored bullets, grouped technical skills, optional AI/open-source sections, and speaking/industry involvement&thinsp;&mdash;&thinsp;all within 1&ndash;2 US Letter pages.
 
 ### Resume destroyer
 
