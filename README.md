@@ -16,7 +16,9 @@ A personal toolkit for AI-assisted job hunting in technical writing, content str
 
 ## How the job tracking pipeline works
 
-```
+> [!NOTE] You can use Gmail through a dedicated Gmail node in n8n.
+
+```text
 Job alert emails (LinkedIn / Indeed)
         |
         v
@@ -72,6 +74,7 @@ Sheet name: `Sheet1` (`gid=0`) in a spreadsheet like `n8n-job-search`.
 ### Prerequisites
 
 - An [n8n](https://n8n.io) instance (cloud or self-hosted) with the `n8n-nodes-imap` package installed.
+   >[!NOTE] You don't need the `n8n-nodes-imap` package if using Gmail.
 - IMAP access to the mailbox that receives job alert emails, with a folder like `Inbox/Career/job-emails`.
 - An SMTP account for sending the daily digest.
 - A Google Service Account with access to your job tracker spreadsheet.
